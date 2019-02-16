@@ -239,6 +239,8 @@ public:
   vtkGetMacro(LoadRTDoseSuccessful, bool);
   /// Get load plan successful flag
   vtkGetMacro(LoadRTPlanSuccessful, bool);
+  /// Get load ion plan successful flag
+  vtkGetMacro(LoadRTIonPlanSuccessful, bool);
   /// Get load image successful flag
   vtkGetMacro(LoadRTImageSuccessful, bool);
 
@@ -403,6 +405,9 @@ protected:
 
   /// Flag indicating if RT Plan has been successfully read from the input dataset
   bool LoadRTPlanSuccessful;
+
+  /// Flag indicating if RT Ion Plan has been successfully read from the input dataset
+  bool LoadRTIonPlanSuccessful;
 
   /// Flag indicating if RT Image has been successfully read from the input dataset
   bool LoadRTImageSuccessful;

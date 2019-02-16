@@ -152,6 +152,8 @@ public:
 
   /// Load RT Plan 
   void LoadRTPlan(DcmDataset* dataset);
+  /// Load RT Ion Plan
+  void LoadRTIonPlan(DcmDataset* dataset);
 
   /// Load RT Structure Set
   void LoadRTStructureSet(DcmDataset* dataset);
@@ -667,6 +669,13 @@ void vtkSlicerDicomRtReader::vtkInternal::LoadRTPlan(DcmDataset* dataset)
   this->External->LoadRTPlanSuccessful = true;
 }
 
+//----------------------------------------------------------------------------
+void vtkSlicerDicomRtReader::vtkInternal::LoadRTIonPlan(DcmDataset* dataset)
+{
+  //TODO: Add code that loads ion plan here. See function above for example
+
+  //this->External->LoadRTIonPlanSuccessful = true;
+}
 
 //----------------------------------------------------------------------------
 // vtkSlicerDicomRtReader methods
@@ -1229,6 +1238,7 @@ vtkSlicerDicomRtReader::vtkSlicerDicomRtReader()
   this->LoadRTStructureSetSuccessful = false;
   this->LoadRTDoseSuccessful = false;
   this->LoadRTPlanSuccessful = false;
+  this->LoadRTIonPlanSuccessful = false;
   this->LoadRTImageSuccessful = false;
 }
 
@@ -1285,6 +1295,10 @@ void vtkSlicerDicomRtReader::Update()
         {
           this->Internal->LoadRTPlan(dataset);  
         }
+        else if (sopClass == UID_RTIonPlanStorage)
+        {
+          this->Internal->LoadRTIonPlan(dataset);  
+        }
         else if (sopClass == UID_RTStructureSetStorage)
         {
           this->Internal->LoadRTStructureSet(dataset);
@@ -1292,10 +1306,6 @@ void vtkSlicerDicomRtReader::Update()
         else if (sopClass == UID_RTTreatmentSummaryRecordStorage)
         {
           //result = dumpRTTreatmentSummaryRecord(out, *dataset);
-        }
-        else if (sopClass == UID_RTIonPlanStorage)
-        {
-          //result = dumpRTIonPlan(out, *dataset);
         }
         else if (sopClass == UID_RTIonBeamsTreatmentRecordStorage)
         {
