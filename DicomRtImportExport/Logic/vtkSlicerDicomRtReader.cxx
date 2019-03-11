@@ -672,9 +672,198 @@ void vtkSlicerDicomRtReader::vtkInternal::LoadRTPlan(DcmDataset* dataset)
 //----------------------------------------------------------------------------
 void vtkSlicerDicomRtReader::vtkInternal::LoadRTIonPlan(DcmDataset* dataset)
 {
-  //TODO: Add code that loads ion plan here. See function above for example
+	this->External->LoadRTIonPlanSuccessful = false;
 
-  //this->External->LoadRTIonPlanSuccessful = true;
+
+	DRTIonPlanIOD rtPlanObject;
+	if (rtPlanObject.read(*dataset).bad())
+	{
+		vtkErrorWithObjectMacro(this->External, "LoadRTIonPlan: Failed to read RT Ion Plan object!");
+		return;
+	}
+
+	vtkDebugWithObjectMacro(this->External, "LoadRTIonPlan: Load RT Ion Plan object");
+
+	DRTIonBeamSequence  &rtPlaneBeamSequenceObject = rtPlanObject.getIonBeamSequence();
+	if (rtPlaneBeamSequenceObject.gotoFirstItem().good())
+	{
+		do
+		{
+			DRTIonBeamSequence::Item &currentBeamSequenceObject = rtPlaneBeamSequenceObject.getCurrentItem();
+			if (!currentBeamSequenceObject.isValid())
+			{
+				vtkDebugWithObjectMacro(this->External, "LoadRTIonPlan: Found an invalid beam sequence in dataset");
+				continue;
+			}
+
+			// Read item into the BeamSequenceVector
+			BeamEntry beamEntry;
+
+			OFString beamName("");
+			currentBeamSequenceObject.getBeamName(beamName);
+			beamEntry.Name = beamName.c_str();
+
+			OFString beamDescription("");
+			currentBeamSequenceObject.getBeamDescription(beamDescription);
+			beamEntry.Description = beamDescription.c_str();
+
+			OFString beamType("");
+			currentBeamSequenceObject.getBeamType(beamType);
+			beamEntry.Type = beamType.c_str();
+
+			Sint32 beamNumber = -1;
+			currentBeamSequenceObject.getBeamNumber(beamNumber);
+			beamEntry.Number = beamNumber;
+
+			vtkTypeFloat32 sourceAxisDistance = 0.0;
+			currentBeamSequenceObject.getVirtualSourceAxisDistances(sourceAxisDistance);
+			beamEntry.SourceAxisDistance = sourceAxisDistance;
+
+			DRTIonControlPointSequence &rtControlPointSequenceObject = currentBeamSequenceObject.getIonControlPointSequence();
+			if (rtControlPointSequenceObject.gotoFirstItem().good())
+			{
+				// do // TODO: comment out for now since only first control point is loaded (as isocenter)
+				{
+					DRTIonControlPointSequence::Item &controlPointItem = rtControlPointSequenceObject.getCurrentItem();
+					if (controlPointItem.isValid())
+					{
+						OFVector<vtkTypeFloat64> isocenterPositionDataLps;
+						controlPointItem.getIsocenterPosition(isocenterPositionDataLps);
+
+						// Convert from DICOM LPS -> Slicer RAS
+						beamEntry.IsocenterPositionRas[0] = -isocenterPositionDataLps[0];
+						beamEntry.IsocenterPositionRas[1] = -isocenterPositionDataLps[1];
+						beamEntry.IsocenterPositionRas[2] = isocenterPositionDataLps[2];
+
+						vtkTypeFloat64 gantryAngle = 0.0;
+						controlPointItem.getGantryAngle(gantryAngle);
+						beamEntry.GantryAngle = gantryAngle;
+
+						vtkTypeFloat64 patientSupportAngle = 0.0;
+						controlPointItem.getPatientSupportAngle(patientSupportAngle);
+						beamEntry.PatientSupportAngle = patientSupportAngle;
+
+						vtkTypeFloat64 beamLimitingDeviceAngle = 0.0;
+						controlPointItem.getBeamLimitingDeviceAngle(beamLimitingDeviceAngle);
+						beamEntry.BeamLimitingDeviceAngle = beamLimitingDeviceAngle;
+
+						DRTBeamLimitingDevicePositionSequence &currentCollimatorPositionSequenceObject =
+							controlPointItem.getBeamLimitingDevicePositionSequence();
+						if (currentCollimatorPositionSequenceObject.gotoFirstItem().good())
+						{
+							do
+							{
+								DRTBeamLimitingDevicePositionSequence::Item &collimatorPositionItem =
+									currentCollimatorPositionSequenceObject.getCurrentItem();
+								if (collimatorPositionItem.isValid())
+								{
+									OFString rtBeamLimitingDeviceType("");
+									collimatorPositionItem.getRTBeamLimitingDeviceType(rtBeamLimitingDeviceType);
+
+									OFVector<vtkTypeFloat64> leafJawPositions;
+									OFCondition getJawPositionsCondition = collimatorPositionItem.getLeafJawPositions(leafJawPositions);
+
+									if (!rtBeamLimitingDeviceType.compare("ASYMX") || !rtBeamLimitingDeviceType.compare("X"))
+									{
+										if (getJawPositionsCondition.good())
+										{
+											beamEntry.LeafJawPositions[0][0] = leafJawPositions[0];
+											beamEntry.LeafJawPositions[0][1] = leafJawPositions[1];
+										}
+										else
+										{
+											vtkDebugWithObjectMacro(this->External, "LoadRTIonPlan: No jaw position found in collimator entry");
+										}
+									}
+									else if (!rtBeamLimitingDeviceType.compare("ASYMY") || !rtBeamLimitingDeviceType.compare("Y"))
+									{
+										if (getJawPositionsCondition.good())
+										{
+											beamEntry.LeafJawPositions[1][0] = leafJawPositions[0];
+											beamEntry.LeafJawPositions[1][1] = leafJawPositions[1];
+										}
+										else
+										{
+											vtkDebugWithObjectMacro(this->External, "LoadRTIonPlan: No jaw position found in collimator entry");
+										}
+									}
+									else if (!rtBeamLimitingDeviceType.compare("MLCX") || !rtBeamLimitingDeviceType.compare("MLCY"))
+									{
+										vtkWarningWithObjectMacro(this->External, "LoadRTIonPlan: Multi-leaf collimator entry found. This collimator type is not yet supported!");
+									}
+									else
+									{
+										vtkErrorWithObjectMacro(this->External, "LoadRTIonPlan: Unsupported collimator type: " << rtBeamLimitingDeviceType);
+									}
+								}
+							} while (currentCollimatorPositionSequenceObject.gotoNextItem().good());
+						}
+					} // endif controlPointItem.isValid()
+				}
+				// while (rtControlPointSequenceObject.gotoNextItem().good());
+			}
+
+			this->BeamSequenceVector.push_back(beamEntry);
+		} while (rtPlaneBeamSequenceObject.gotoNextItem().good());
+	}
+	else
+	{
+		vtkErrorWithObjectMacro(this->External, "LoadRTIonPlan: No beams found in RT plan!");
+		return;
+	}
+
+	// SOP instance UID
+	OFString sopInstanceUid("");
+	if (rtPlanObject.getSOPInstanceUID(sopInstanceUid).bad())
+	{
+		vtkErrorWithObjectMacro(this->External, "LoadRTIonPlan: Failed to get SOP instance UID for RT plan!");
+		return; // mandatory DICOM value
+	}
+	this->External->SetSOPInstanceUID(sopInstanceUid.c_str());
+
+	// Referenced structure set UID
+	DRTReferencedStructureSetSequence &referencedStructureSetSequence = rtPlanObject.getReferencedStructureSetSequence();
+	if (referencedStructureSetSequence.gotoFirstItem().good())
+	{
+		DRTReferencedStructureSetSequence::Item &referencedStructureSetSequenceItem = referencedStructureSetSequence.getCurrentItem();
+		if (referencedStructureSetSequenceItem.isValid())
+		{
+			OFString referencedSOPInstanceUID("");
+			if (referencedStructureSetSequenceItem.getReferencedSOPInstanceUID(referencedSOPInstanceUID).good())
+			{
+				this->External->SetRTPlanReferencedStructureSetSOPInstanceUID(referencedSOPInstanceUID.c_str());
+			}
+		}
+	}
+
+	// Referenced dose UID
+	DRTReferencedDoseSequence &referencedDoseSequence = rtPlanObject.getReferencedDoseSequence();
+	std::string serializedDoseUidList("");
+	if (referencedDoseSequence.gotoFirstItem().good())
+	{
+		do
+		{
+			DRTReferencedDoseSequence::Item &currentDoseSequenceItem = referencedDoseSequence.getCurrentItem();
+			if (currentDoseSequenceItem.isValid())
+			{
+				OFString referencedSOPInstanceUID("");
+				if (currentDoseSequenceItem.getReferencedSOPInstanceUID(referencedSOPInstanceUID).good())
+				{
+					serializedDoseUidList.append(referencedSOPInstanceUID.c_str());
+					serializedDoseUidList.append(" ");
+				}
+			}
+		} while (referencedDoseSequence.gotoNextItem().good());
+	}
+	// Strip last space
+	serializedDoseUidList = serializedDoseUidList.substr(0, serializedDoseUidList.size() - 1);
+	this->External->SetRTPlanReferencedDoseSOPInstanceUIDs(serializedDoseUidList.size() > 0 ? serializedDoseUidList.c_str() : NULL);
+
+	// Get and store patient, study and series information
+	this->External->GetAndStoreHierarchyInformation(&rtPlanObject);
+
+	this->External->LoadRTIonPlanSuccessful = true;
+
 }
 
 //----------------------------------------------------------------------------
